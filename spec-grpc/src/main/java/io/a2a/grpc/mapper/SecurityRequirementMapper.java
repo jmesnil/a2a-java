@@ -6,15 +6,14 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.protobuf.ProtocolStringList;
-import io.a2a.grpc.SecurityRequirement;
 import io.a2a.grpc.StringList;
 import org.mapstruct.Mapper;
 
 /**
  * Mapper between domain security requirements and protobuf SecurityRequirement messages.
  * <p>
- * Domain representation: {@code List<Map<String, List<String>>>} where each map represents
- * one security option with scheme names as keys and scopes as values.
+ * Domain representation: {@code List<SecurityRequirement>} where each SecurityRequirement contains
+ * a schemes map with scheme names as keys and scopes as values.
  * <p>
  * Proto representation: {@code repeated SecurityRequirement} where each SecurityRequirement has
  * {@code map<string, StringList> schemes}.
@@ -22,8 +21,8 @@ import org.mapstruct.Mapper;
  * Example: A security requirement that allows either OAuth2 with read/write scopes OR API Key:
  * <pre>
  * Domain: [
- *   {"oauth2": ["read", "write"]},
- *   {"apiKey": []}
+ *   SecurityRequirement{schemes: {"oauth2": ["read", "write"]}},
+ *   SecurityRequirement{schemes: {"apiKey": []}}
  * ]
  * Proto: [
  *   SecurityRequirement{schemes: {"oauth2": StringList{values: ["read", "write"]}}},
@@ -31,29 +30,30 @@ import org.mapstruct.Mapper;
  * ]
  * </pre>
  * <p>
- * <b>Manual Implementation Required:</b> Handles complex nested structure ({@code List<Map<String, List<String>>>} ↔
+ * <b>Manual Implementation Required:</b> Handles complex nested structure ({@code List<SecurityRequirement>} ↔
  * {@code repeated SecurityRequirement} with {@code map<string, StringList>}) requiring manual iteration and StringList wrapper handling.
  */
 @Mapper(config = A2AProtoMapperConfig.class)
-public interface SecurityMapper {
+public interface SecurityRequirementMapper {
 
-    SecurityMapper INSTANCE = A2AMappers.getMapper(SecurityMapper.class);
+    SecurityRequirementMapper INSTANCE = A2AMappers.getMapper(SecurityRequirementMapper.class);
 
     /**
-     * Converts a single domain security requirement map to a proto SecurityRequirement message.
+     * Converts a single domain SecurityRequirement to a proto SecurityRequirement message.
      * <p>
      * MapStruct will call this method for each element when mapping the list.
      *
-     * @param schemeMap map of scheme names to scopes
+     * @param domainRequirement domain SecurityRequirement with schemes map
      * @return SecurityRequirement proto message, or null if input is null
      */
-    default SecurityRequirement mapSecurityItem(Map<String, List<String>> schemeMap) {
-        if (schemeMap == null) {
+    default io.a2a.grpc.SecurityRequirement mapSecurityRequirement(io.a2a.spec.SecurityRequirement domainRequirement) {
+        if (domainRequirement == null) {
             return null;
         }
 
-        SecurityRequirement.Builder securityBuilder = SecurityRequirement.newBuilder();
-        for (Map.Entry<String, List<String>> entry : schemeMap.entrySet()) {
+        io.a2a.grpc.SecurityRequirement.Builder securityBuilder = io.a2a.grpc.SecurityRequirement.newBuilder();
+        Map<String, List<String>> schemes = domainRequirement.schemes();
+        for (Map.Entry<String, List<String>> entry : schemes.entrySet()) {
             StringList.Builder stringListBuilder = StringList.newBuilder();
             if (entry.getValue() != null) {
                 stringListBuilder.addAllList(entry.getValue());
@@ -66,20 +66,20 @@ public interface SecurityMapper {
     /**
      * Converts domain security requirements to proto SecurityRequirement messages.
      * <p>
-     * Each Map in the domain list becomes one SecurityRequirement message in proto, representing
-     * one way to satisfy the security requirements (OR relationship between list items).
+     * Each SecurityRequirement in the domain list becomes one SecurityRequirement message in proto,
+     * representing one way to satisfy the security requirements (OR relationship between list items).
      *
-     * @param domainSecurity list of maps representing security requirement options
+     * @param domainSecurity list of SecurityRequirement domain objects
      * @return list of SecurityRequirement proto messages, or null if input is null
      */
-    default List<SecurityRequirement> toProto(List<Map<String, List<String>>> domainSecurity) {
+    default List<io.a2a.grpc.SecurityRequirement> toProto(List<io.a2a.spec.SecurityRequirement> domainSecurity) {
         if (domainSecurity == null) {
             return null;
         }
 
-        List<SecurityRequirement> protoList = new ArrayList<>(domainSecurity.size());
-        for (Map<String, List<String>> schemeMap : domainSecurity) {
-            protoList.add(mapSecurityItem(schemeMap));
+        List<io.a2a.grpc.SecurityRequirement> protoList = new ArrayList<>(domainSecurity.size());
+        for (io.a2a.spec.SecurityRequirement requirement : domainSecurity) {
+            protoList.add(mapSecurityRequirement(requirement));
         }
         return protoList;
     }
@@ -88,22 +88,22 @@ public interface SecurityMapper {
      * Converts proto SecurityRequirement messages to domain security requirements.
      *
      * @param protoSecurity list of SecurityRequirement proto messages
-     * @return list of maps representing security requirement options, or null if input is null
+     * @return list of SecurityRequirement domain objects, or null if input is null
      */
-    default List<Map<String, List<String>>> fromProto(List<SecurityRequirement> protoSecurity) {
+    default List<io.a2a.spec.SecurityRequirement> fromProto(List<io.a2a.grpc.SecurityRequirement> protoSecurity) {
         if (protoSecurity == null) {
             return null;
         }
 
-        List<Map<String, List<String>>> domainList = new ArrayList<>(protoSecurity.size());
-        for (SecurityRequirement security : protoSecurity) {
+        List<io.a2a.spec.SecurityRequirement> domainList = new ArrayList<>(protoSecurity.size());
+        for (io.a2a.grpc.SecurityRequirement security : protoSecurity) {
             Map<String, List<String>> schemeMap = new LinkedHashMap<>();
             for (Map.Entry<String, StringList> entry : security.getSchemesMap().entrySet()) {
                 ProtocolStringList listList = entry.getValue().getListList();
                 List<String> values = new ArrayList<>(listList);
                 schemeMap.put(entry.getKey(), values);
             }
-            domainList.add(schemeMap);
+            domainList.add(new io.a2a.spec.SecurityRequirement(schemeMap));
         }
         return domainList;
     }
